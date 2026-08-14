@@ -112,12 +112,18 @@ function App() {
             Markdown folder you control.
           </p>
         </div>
-        <button className="primary-button" type="button" onClick={choosePdfs}>
-          Add PDFs
-        </button>
       </section>
 
       <section className="settings-grid">
+        <article className="card setting-card">
+          <p className="eyebrow">INPUT PDFS</p>
+          <h2>{queue.length ? `${queue.length} selected` : "Choose PDFs"}</h2>
+          <p>PDFs are converted locally and remain in their original folder.</p>
+          <button className="primary-button" type="button" onClick={choosePdfs}>
+            Add PDFs
+          </button>
+        </article>
+
         <article className="card setting-card">
           <p className="eyebrow">OUTPUT</p>
           <h2>{outputDir ? fileName(outputDir) : "Choose a folder"}</h2>
