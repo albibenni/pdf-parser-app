@@ -28,6 +28,12 @@ pnpm test
 pnpm tauri build --no-bundle
 ```
 
+### Arch Linux package
+
+Build the package locally with `make build-aur`. It uses
+[aur/PKGBUILD](aur/PKGBUILD) and writes the resulting package archive into
+`aur/`. Run `make install-aur` to build and install it locally.
+
 ## Modes
 
 - **Fast**: default for M-series Macs and CPU-only Linux.

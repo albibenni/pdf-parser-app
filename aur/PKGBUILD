@@ -1,0 +1,30 @@
+pkgname=pdf-parser-app
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Local-first PDF to Markdown desktop application"
+arch=('x86_64')
+url="https://github.com/albibenni/pdf-parser-app"
+license=('custom')
+depends=('webkit2gtk-4.1' 'gtk3' 'cairo' 'glib2' 'pango' 'gdk-pixbuf2')
+makedepends=('cargo' 'nodejs' 'pnpm' 'pkgconf')
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+
+  # Arch's makepkg can add LTO flags that make Rust/Tauri linking unreliable.
+  export CFLAGS="$(echo "$CFLAGS" | sed 's/-flto=auto//g; s/-flto//g')"
+  export CXXFLAGS="$(echo "$CXXFLAGS" | sed 's/-flto=auto//g; s/-flto//g')"
+  export LDFLAGS="$(echo "$LDFLAGS" | sed 's/-flto=auto//g; s/-flto//g')"
+  export CARGO_PROFILE_RELEASE_LTO=false
+
+  pnpm install --frozen-lockfile
+  pnpm tauri build --bundles deb
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  cp -r src-tauri/target/release/bundle/deb/*/data/usr "$pkgdir/"
+}

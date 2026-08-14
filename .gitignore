@@ -31,5 +31,6 @@ coverage
 *.zip
 aur/*
 !aur/PKGBUILD
+!aur/.gitignore
 **/target/
 src-tauri/obsidian-folder-picker/Cargo.lock

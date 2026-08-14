@@ -1,4 +1,4 @@
-.PHONY: i dev build test test-ui test-rust lint format clean
+.PHONY: i dev build build-aur install-aur test test-ui test-rust lint format clean
 
 i:
 	pnpm install
@@ -10,6 +10,13 @@ dev:
 
 build:
 	pnpm tauri build
+
+# Builds a local Arch package from the AUR recipe in aur/.
+build-aur:
+	cd aur && makepkg -s
+
+install-aur:
+	cd aur && makepkg -si
 
 test: test-ui test-rust
 
