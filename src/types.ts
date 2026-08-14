@@ -11,6 +11,11 @@ export type ConversionResult = {
   output: string;
 };
 
+export type RuntimeStatus = {
+  state: "ready" | "missing";
+  detail: string;
+};
+
 export type QueueItem = {
   id: string;
   inputPath: string;

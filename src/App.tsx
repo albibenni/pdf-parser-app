@@ -1,12 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fileName, fileStem } from "./lib/paths";
 import type {
   ConversionMode,
   ConversionRequest,
   ConversionResult,
   QueueItem,
+  RuntimeStatus,
 } from "./types";
 
 const modeDescription: Record<ConversionMode, string> = {
@@ -28,11 +29,43 @@ function App() {
   const [message, setMessage] = useState(
     "Choose PDFs to begin. Files stay on this device.",
   );
+  const [runtime, setRuntime] = useState<RuntimeStatus>({
+    state: "missing",
+    detail: "Checking the local Marker runtime…",
+  });
+  const [installingRuntime, setInstallingRuntime] = useState(false);
 
   const readyCount = useMemo(
     () => queue.filter((item) => item.status === "ready").length,
     [queue],
   );
+
+  const refreshRuntime = useCallback(async () => {
+    const status = await invoke<RuntimeStatus>("get_runtime_status");
+    setRuntime(status);
+  }, []);
+
+  useEffect(() => {
+    void refreshRuntime().catch((error) =>
+      setRuntime({ state: "missing", detail: String(error) }),
+    );
+  }, [refreshRuntime]);
+
+  const installRuntime = async () => {
+    setInstallingRuntime(true);
+    setMessage("Installing Marker locally. This can take a few minutes.");
+    try {
+      const status = await invoke<RuntimeStatus>("install_marker_runtime");
+      setRuntime(status);
+      setMessage("Marker is ready for local conversion.");
+    } catch (error) {
+      const detail = String(error);
+      setRuntime({ state: "missing", detail });
+      setMessage("Marker setup did not finish.");
+    } finally {
+      setInstallingRuntime(false);
+    }
+  };
 
   const choosePdfs = async () => {
     const selected = await open({
@@ -52,6 +85,10 @@ function App() {
   };
 
   const runQueue = async () => {
+    if (runtime.state !== "ready") {
+      setMessage("Install the local Marker runtime before converting.");
+      return;
+    }
     if (!outputDir) {
       setMessage("Choose an output folder first.");
       return;
@@ -115,6 +152,24 @@ function App() {
       </section>
 
       <section className="settings-grid">
+        <article className="card setting-card runtime-card">
+          <p className="eyebrow">LOCAL RUNTIME</p>
+          <h2>
+            {runtime.state === "ready" ? "Marker is ready" : "Set up Marker"}
+          </h2>
+          <p>{runtime.detail}</p>
+          {runtime.state === "missing" && (
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={installingRuntime}
+              onClick={() => void installRuntime()}
+            >
+              {installingRuntime ? "Installing Marker…" : "Install Marker"}
+            </button>
+          )}
+        </article>
+
         <article className="card setting-card">
           <p className="eyebrow">INPUT PDFS</p>
           <h2>{queue.length ? `${queue.length} selected` : "Choose PDFs"}</h2>
@@ -165,7 +220,7 @@ function App() {
           <button
             className="primary-button"
             type="button"
-            disabled={readyCount === 0}
+            disabled={readyCount === 0 || runtime.state !== "ready"}
             onClick={() => void runQueue()}
           >
             Convert {readyCount || ""} to Markdown

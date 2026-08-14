@@ -6,12 +6,15 @@ A local-first Tauri desktop app that converts PDFs to Markdown using
 ## Current state
 
 The app provides the Tauri UI, file/folder selection, conversion modes, queue,
-and a Rust command that calls the local `marker_single` executable. It does not
-send PDFs to a hosted service.
+and a private Marker runtime. On first setup, the app creates its own Python
+environment under its app-data folder and installs `marker-pdf` there. It does
+not use or modify a system-wide Marker installation, and it does not send PDFs
+to a hosted service.
 
-For now, install Marker independently in the user environment that launches
-the app. The next packaging step is a managed runtime installer that downloads
-Marker, its models, and `llama.cpp` into the app data directory on first use.
+The initial model download happens when Marker first processes an applicable
+document. OCR-capable conversion additionally needs the `llama-server` binary
+required by Marker on CPU and Apple Silicon; bundling that binary per platform
+is the next packaging task.
 
 ## Development
 
