@@ -191,8 +191,10 @@ function App() {
             {outputDir ? "Change folder" : "Select output folder"}
           </button>
         </article>
+      </section>
 
-        <article className="card setting-card">
+      <section className="conversion-row">
+        <article className="card setting-card mode-card">
           <label className="eyebrow" htmlFor="conversion-mode">
             CONVERSION MODE
           </label>
@@ -207,45 +209,45 @@ function App() {
           </select>
           <p>{modeDescription[mode]}</p>
         </article>
-      </section>
 
-      <section className="queue-section card">
-        <div className="queue-header">
-          <div>
-            <p className="eyebrow">QUEUE</p>
-            <h2>
-              {queue.length ? `${queue.length} files` : "No PDFs selected"}
-            </h2>
+        <section className="queue-section card">
+          <div className="queue-header">
+            <div>
+              <p className="eyebrow">QUEUE</p>
+              <h2>
+                {queue.length ? `${queue.length} files` : "No PDFs selected"}
+              </h2>
+            </div>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={readyCount === 0 || runtime.state !== "ready"}
+              onClick={() => void runQueue()}
+            >
+              Convert {readyCount || ""} to Markdown
+            </button>
           </div>
-          <button
-            className="primary-button"
-            type="button"
-            disabled={readyCount === 0 || runtime.state !== "ready"}
-            onClick={() => void runQueue()}
-          >
-            Convert {readyCount || ""} to Markdown
-          </button>
-        </div>
-        <p className="status-message">{message}</p>
-        <ul className="queue-list">
-          {queue.map((item) => (
-            <li key={item.id} className="queue-item">
-              <div>
-                <strong>{fileName(item.inputPath)}</strong>
-                <span className="path">{item.inputPath}</span>
-                {item.result && (
-                  <span className="path">
-                    → {fileStem(item.result.markdownPath)}.md
-                  </span>
-                )}
-                {item.error && <span className="error">{item.error}</span>}
-              </div>
-              <span className={`status status-${item.status}`}>
-                {item.status}
-              </span>
-            </li>
-          ))}
-        </ul>
+          <p className="status-message">{message}</p>
+          <ul className="queue-list">
+            {queue.map((item) => (
+              <li key={item.id} className="queue-item">
+                <div>
+                  <strong>{fileName(item.inputPath)}</strong>
+                  <span className="path">{item.inputPath}</span>
+                  {item.result && (
+                    <span className="path">
+                      → {fileStem(item.result.markdownPath)}.md
+                    </span>
+                  )}
+                  {item.error && <span className="error">{item.error}</span>}
+                </div>
+                <span className={`status status-${item.status}`}>
+                  {item.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       </section>
     </main>
   );

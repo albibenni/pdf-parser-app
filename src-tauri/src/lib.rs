@@ -123,13 +123,19 @@ fn ensure_success(action: &str, output: std::process::Output) -> Result<(), Stri
     }
     let error_output = String::from_utf8_lossy(&output.stderr).trim().to_string();
     Err(if error_output.is_empty() {
-        format!("Could not {action}; process exited with status {}.", output.status)
+        format!(
+            "Could not {action}; process exited with status {}.",
+            output.status
+        )
     } else {
         format!("Could not {action}: {error_output}")
     })
 }
 
-fn convert_with_marker(app: &AppHandle, request: ConversionRequest) -> Result<ConversionResult, String> {
+fn convert_with_marker(
+    app: &AppHandle,
+    request: ConversionRequest,
+) -> Result<ConversionResult, String> {
     let input = Path::new(&request.input_path);
     let output_dir = Path::new(&request.output_dir);
 
@@ -146,7 +152,9 @@ fn convert_with_marker(app: &AppHandle, request: ConversionRequest) -> Result<Co
     let runtime_root = runtime_root(app)?;
     let runtime_marker = marker_path(app)?;
     if !runtime_marker.is_file() {
-        return Err("Marker is not installed. Select Install Marker in PDF Parser first.".to_string());
+        return Err(
+            "Marker is not installed. Select Install Marker in PDF Parser first.".to_string(),
+        );
     }
 
     let model_cache = runtime_root.join("models");

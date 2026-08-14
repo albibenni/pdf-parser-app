@@ -101,6 +101,17 @@ h2 {
   gap: 1.25rem;
   margin-bottom: 1.25rem;
 }
+
+.conversion-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.5fr) minmax(0, 1.5fr);
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+.mode-card {
+  justify-content: center;
+}
 .setting-card {
   padding: 1.5rem;
   display: flex;
@@ -225,6 +236,10 @@ h2 {
     flex-direction: column;
   }
   .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .conversion-row {
     grid-template-columns: 1fr;
   }
   .primary-button {
