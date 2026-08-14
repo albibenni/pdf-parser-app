@@ -38,6 +38,8 @@ struct ConversionResult {
 struct RuntimeStatus {
     state: &'static str,
     detail: String,
+    marker_installed: bool,
+    llama_cpp_installed: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -47,6 +49,15 @@ struct InstallProgress {
     total_bytes: u64,
     bytes_per_second: f64,
     eta_seconds: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversionProgress {
+    input_path: String,
+    current: u64,
+    total: Option<u64>,
+    detail: String,
 }
 
 #[tauri::command]
@@ -84,16 +95,31 @@ fn marker_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn runtime_status(app: &AppHandle) -> Result<RuntimeStatus, String> {
     let marker = marker_path(app)?;
-    if marker.is_file() {
+    let marker_installed = marker.is_file();
+    let llama_cpp_installed = llama_server_path().is_some();
+
+    if marker_installed && llama_cpp_installed {
         Ok(RuntimeStatus {
             state: "ready",
-            detail: "Installed privately alongside PDF Parser.".to_string(),
+            detail: "Marker and llama.cpp are ready for local OCR conversion.".to_string(),
+            marker_installed,
+            llama_cpp_installed,
+        })
+    } else if marker_installed {
+        Ok(RuntimeStatus {
+            state: "missing",
+            detail: "Marker is installed, but llama.cpp is needed for OCR conversion. Select Install llama.cpp to finish setup."
+                .to_string(),
+            marker_installed,
+            llama_cpp_installed,
         })
     } else {
         Ok(RuntimeStatus {
             state: "missing",
             detail: "Install Marker once; its Python environment and models stay in this app's data folder."
                 .to_string(),
+            marker_installed,
+            llama_cpp_installed,
         })
     }
 }
@@ -121,8 +147,89 @@ fn install_runtime(app: &AppHandle) -> Result<RuntimeStatus, String> {
     }
 
     install_marker_with_progress(app, &python)?;
+    install_llama_cpp()?;
 
     runtime_status(app)
+}
+
+fn llama_server_path() -> Option<PathBuf> {
+    let known_paths = [
+        "/opt/homebrew/bin/llama-server",
+        "/usr/local/bin/llama-server",
+        "/usr/bin/llama-server",
+    ];
+    known_paths
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+        .or_else(|| command_path("llama-server"))
+}
+
+fn command_path(command: &str) -> Option<PathBuf> {
+    Command::new("which")
+        .arg(command)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            (!path.is_empty()).then_some(PathBuf::from(path))
+        })
+        .filter(|path| path.is_file())
+}
+
+fn brew_path() -> Option<PathBuf> {
+    ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.is_file())
+        .or_else(|| command_path("brew"))
+}
+
+fn install_llama_cpp() -> Result<(), String> {
+    if llama_server_path().is_some() {
+        return Ok(());
+    }
+
+    let output = if cfg!(target_os = "macos") {
+        let brew = brew_path().ok_or_else(|| {
+            "Homebrew is required to install llama.cpp on macOS. Install Homebrew, then retry."
+                .to_string()
+        })?;
+        Command::new(brew)
+            .args(["install", "llama.cpp"])
+            .output()
+            .map_err(|error| format!("Could not start Homebrew to install llama.cpp: {error}"))?
+    } else if cfg!(target_os = "linux") {
+        if command_path("pacman").is_none() {
+            return Err(
+                "Automatic llama.cpp setup on Linux currently supports Arch Linux only."
+                    .to_string(),
+            );
+        }
+        Command::new("pkexec")
+            .args(["pacman", "-S", "--needed", "--noconfirm", "llama-cpp"])
+            .output()
+            .map_err(|error| {
+                format!(
+                    "Could not start the Arch Linux package installer. Install polkit, then retry: {error}"
+                )
+            })?
+    } else {
+        return Err(
+            "llama.cpp automatic setup currently supports macOS and Arch Linux only.".to_string(),
+        );
+    };
+
+    ensure_success("install llama.cpp", output)?;
+    if llama_server_path().is_some() {
+        Ok(())
+    } else {
+        Err(
+            "llama.cpp installed but llama-server was not found. Restart PDF Parser and try again."
+                .to_string(),
+        )
+    }
 }
 
 fn install_marker_with_progress(app: &AppHandle, python: &Path) -> Result<(), String> {
@@ -247,13 +354,18 @@ fn convert_with_marker(
             "Marker is not installed. Select Install Marker in PDF Parser first.".to_string(),
         );
     }
+    let llama_server = llama_server_path().ok_or_else(|| {
+        "llama.cpp is not installed. Select Install llama.cpp in PDF Parser before using OCR modes."
+            .to_string()
+    })?;
 
     let model_cache = runtime_root.join("models");
     let mut command = Command::new(runtime_marker);
     command.arg(input).arg("--output_dir").arg(output_dir);
     command
         .env("HF_HOME", &model_cache)
-        .env("HUGGINGFACE_HUB_CACHE", model_cache.join("hub"));
+        .env("HUGGINGFACE_HUB_CACHE", model_cache.join("hub"))
+        .env("LLAMA_CPP_BINARY", llama_server);
     match request.mode {
         ConversionMode::Fast => {
             command.arg("--mode").arg("fast");
@@ -266,15 +378,39 @@ fn convert_with_marker(
         }
     }
 
-    let output = command
-        .output()
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
         .map_err(|error| format!("Could not start the local Marker runtime: {error}"))?;
-    let command_output = String::from_utf8_lossy(&output.stdout).to_string();
-    let error_output = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Could not read Marker output.".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Could not read Marker progress.".to_string())?;
+    let progress_app = app.clone();
+    let progress_input = request.input_path.clone();
+    let stderr_reader =
+        thread::spawn(move || read_marker_stderr(stderr, progress_app, progress_input));
+    let command_output = BufReader::new(stdout)
+        .lines()
+        .map_while(Result::ok)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let status = child
+        .wait()
+        .map_err(|error| format!("Could not wait for the local Marker runtime: {error}"))?;
+    let error_output = stderr_reader
+        .join()
+        .map_err(|_| "Could not collect Marker output.".to_string())?
+        .trim()
+        .to_string();
 
-    if !output.status.success() {
+    if !status.success() {
         return Err(if error_output.is_empty() {
-            format!("Marker exited with status {}.", output.status)
+            format!("Marker exited with status {status}.")
         } else {
             format!("Marker failed: {error_output}")
         });
@@ -292,6 +428,42 @@ fn convert_with_marker(
     })
 }
 
+fn read_marker_stderr(stderr: impl std::io::Read, app: AppHandle, input_path: String) -> String {
+    let mut reader = BufReader::new(stderr);
+    let mut output = String::new();
+    let mut buffer = Vec::new();
+
+    while reader.read_until(b'\r', &mut buffer).unwrap_or(0) > 0 {
+        let line = String::from_utf8_lossy(&buffer);
+        if let Some((current, total)) = parse_marker_progress(&line) {
+            let _ = app.emit(
+                "marker-conversion-progress",
+                ConversionProgress {
+                    input_path: input_path.clone(),
+                    current,
+                    total: Some(total),
+                    detail: "Converting document".to_string(),
+                },
+            );
+        }
+        output.push_str(&line);
+        buffer.clear();
+    }
+
+    output
+}
+
+fn parse_marker_progress(line: &str) -> Option<(u64, u64)> {
+    line.split_whitespace().rev().find_map(|token| {
+        let token =
+            token.trim_matches(|character: char| !character.is_ascii_digit() && character != '/');
+        let (current, total) = token.split_once('/')?;
+        let current = current.parse().ok()?;
+        let total = total.parse().ok()?;
+        (total > 0 && current <= total).then_some((current, total))
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -306,7 +478,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_pip_progress, ConversionMode};
+    use super::{parse_marker_progress, parse_pip_progress, ConversionMode};
 
     #[test]
     fn deserializes_text_only_mode() {
@@ -321,5 +493,13 @@ mod tests {
             Some((500, 1000))
         );
         assert_eq!(parse_pip_progress("Progress 500 of 0"), None);
+    }
+
+    #[test]
+    fn parses_marker_progress() {
+        assert_eq!(
+            parse_marker_progress("Converting:  50%|█████| 3/6 [00:01<00:01]"),
+            Some((3, 6))
+        );
     }
 }

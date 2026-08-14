@@ -197,7 +197,43 @@ h2 {
   font-size: 0.8rem;
 }
 
+.conversion-progress {
+  width: min(100%, 28rem);
+  height: 0.35rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(234, 179, 8, 0.16);
+}
+
+.conversion-progress span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fbbf24, #f97316);
+  animation: conversion-progress 1.2s ease-in-out infinite;
+}
+
+.conversion-progress:has(span[style]) span {
+  animation: none;
+}
+
+.conversion-details {
+  color: #d4d4d8;
+  font-size: 0.8rem;
+}
+
 @keyframes install-progress {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@keyframes conversion-progress {
   from {
     transform: translateX(-120%);
   }
@@ -288,6 +324,7 @@ h2 {
     transition-duration: 0.01ms;
   }
 
+  .conversion-progress span,
   .install-progress span {
     animation: none;
     transform: translateX(70%);

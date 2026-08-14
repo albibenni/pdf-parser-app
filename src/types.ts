@@ -14,6 +14,8 @@ export type ConversionResult = {
 export type RuntimeStatus = {
   state: "ready" | "missing";
   detail: string;
+  markerInstalled: boolean;
+  llamaCppInstalled: boolean;
 };
 
 export type InstallProgress = {
@@ -23,10 +25,18 @@ export type InstallProgress = {
   etaSeconds: number | null;
 };
 
+export type ConversionProgress = {
+  inputPath: string;
+  current: number;
+  total: number | null;
+  detail: string;
+};
+
 export type QueueItem = {
   id: string;
   inputPath: string;
   status: "ready" | "converting" | "complete" | "error";
   error?: string;
   result?: ConversionResult;
+  progress?: ConversionProgress;
 };

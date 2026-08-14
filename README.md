@@ -9,12 +9,12 @@ The app provides the Tauri UI, file/folder selection, conversion modes, queue,
 and a private Marker runtime. On first setup, the app creates its own Python
 environment under its app-data folder and installs `marker-pdf` there. It does
 not use or modify a system-wide Marker installation, and it does not send PDFs
-to a hosted service.
+to a hosted service. OCR conversion also needs `llama-server`: setup checks for
+it and installs `llama.cpp` with Homebrew on macOS or authenticated `pacman` on
+Arch Linux.
 
 The initial model download happens when Marker first processes an applicable
-document. OCR-capable conversion additionally needs the `llama-server` binary
-required by Marker on CPU and Apple Silicon; bundling that binary per platform
-is the next packaging task.
+document.
 
 ## Development
 

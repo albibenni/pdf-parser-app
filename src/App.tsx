@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fileName, fileStem } from "./lib/paths";
 import type {
   ConversionMode,
+  ConversionProgress,
   ConversionRequest,
   ConversionResult,
   InstallProgress,
@@ -45,6 +46,8 @@ function App() {
   const [runtime, setRuntime] = useState<RuntimeStatus>({
     state: "missing",
     detail: "Checking the local Marker runtime…",
+    markerInstalled: false,
+    llamaCppInstalled: false,
   });
   const [installingRuntime, setInstallingRuntime] = useState(false);
   const [installProgress, setInstallProgress] =
@@ -62,7 +65,12 @@ function App() {
 
   useEffect(() => {
     void refreshRuntime().catch((error) =>
-      setRuntime({ state: "missing", detail: String(error) }),
+      setRuntime({
+        state: "missing",
+        detail: String(error),
+        markerInstalled: false,
+        llamaCppInstalled: false,
+      }),
     );
   }, [refreshRuntime]);
 
@@ -76,17 +84,40 @@ function App() {
     return () => unlisten?.();
   }, []);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<ConversionProgress>("marker-conversion-progress", (event) => {
+      setQueue((current) =>
+        current.map((item) =>
+          item.inputPath === event.payload.inputPath
+            ? { ...item, progress: event.payload }
+            : item,
+        ),
+      );
+    }).then((remove) => {
+      unlisten = remove;
+    });
+    return () => unlisten?.();
+  }, []);
+
   const installRuntime = async () => {
     setInstallingRuntime(true);
     setInstallProgress(null);
-    setMessage("Installing Marker locally. This can take a few minutes.");
+    setMessage(
+      "Installing local conversion tools. This can take a few minutes.",
+    );
     try {
       const status = await invoke<RuntimeStatus>("install_marker_runtime");
       setRuntime(status);
-      setMessage("Marker is ready for local conversion.");
+      setMessage("Marker and llama.cpp are ready for local conversion.");
     } catch (error) {
       const detail = String(error);
-      setRuntime({ state: "missing", detail });
+      setRuntime({
+        state: "missing",
+        detail,
+        markerInstalled: runtime.markerInstalled,
+        llamaCppInstalled: runtime.llamaCppInstalled,
+      });
       setMessage("Marker setup did not finish.");
     } finally {
       setInstallingRuntime(false);
@@ -124,7 +155,18 @@ function App() {
     for (const item of queue.filter((entry) => entry.status === "ready")) {
       setQueue((current) =>
         current.map((entry) =>
-          entry.id === item.id ? { ...entry, status: "converting" } : entry,
+          entry.id === item.id
+            ? {
+                ...entry,
+                status: "converting",
+                progress: {
+                  inputPath: item.inputPath,
+                  current: 0,
+                  total: null,
+                  detail: "Starting conversion…",
+                },
+              }
+            : entry,
         ),
       );
       try {
@@ -181,7 +223,9 @@ function App() {
         <article className="card setting-card runtime-card">
           <p className="eyebrow">LOCAL RUNTIME</p>
           <h2>
-            {runtime.state === "ready" ? "Marker is ready" : "Set up Marker"}
+            {runtime.state === "ready"
+              ? "OCR conversion is ready"
+              : "Set up OCR"}
           </h2>
           <p>{runtime.detail}</p>
           {installingRuntime && (
@@ -229,7 +273,13 @@ function App() {
               disabled={installingRuntime}
               onClick={() => void installRuntime()}
             >
-              {installingRuntime ? "Installing Marker…" : "Install Marker"}
+              {installingRuntime
+                ? "Installing conversion tools…"
+                : runtime.markerInstalled
+                  ? "Install llama.cpp"
+                  : runtime.llamaCppInstalled
+                    ? "Install Marker"
+                    : "Install Marker and llama.cpp"}
             </button>
           )}
         </article>
@@ -304,6 +354,36 @@ function App() {
                     </span>
                   )}
                   {item.error && <span className="error">{item.error}</span>}
+                  {item.status === "converting" && (
+                    <>
+                      <div
+                        aria-label={`Conversion progress for ${fileName(item.inputPath)}`}
+                        aria-valuemax={item.progress?.total ?? undefined}
+                        aria-valuemin={0}
+                        aria-valuenow={item.progress?.current || undefined}
+                        aria-valuetext={
+                          item.progress?.total
+                            ? `${item.progress.current} of ${item.progress.total}`
+                            : (item.progress?.detail ?? "Starting conversion")
+                        }
+                        className="conversion-progress"
+                        role="progressbar"
+                      >
+                        <span
+                          style={{
+                            width: item.progress?.total
+                              ? `${Math.min(100, (item.progress.current / item.progress.total) * 100)}%`
+                              : undefined,
+                          }}
+                        />
+                      </div>
+                      <span className="conversion-details">
+                        {item.progress?.total
+                          ? `${item.progress.current} of ${item.progress.total} steps`
+                          : (item.progress?.detail ?? "Starting conversion…")}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <span className={`status status-${item.status}`}>
                   {item.status}
