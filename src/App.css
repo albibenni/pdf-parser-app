@@ -170,6 +170,42 @@ h2 {
   cursor: wait;
   opacity: 0.65;
 }
+
+.install-progress {
+  width: 100%;
+  height: 0.4rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(147, 197, 253, 0.14);
+}
+
+.install-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  animation: install-progress 1.2s ease-in-out infinite;
+}
+
+.install-progress:has(span[style]) span {
+  animation: none;
+}
+
+.install-details {
+  color: #a1a1aa;
+  font-size: 0.8rem;
+}
+
+@keyframes install-progress {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(340%);
+  }
+}
 .secondary-button {
   color: #dbeafe;
   background: rgba(59, 130, 246, 0.16);
@@ -250,5 +286,10 @@ h2 {
   * {
     scroll-behavior: auto;
     transition-duration: 0.01ms;
+  }
+
+  .install-progress span {
+    animation: none;
+    transform: translateX(70%);
   }
 }

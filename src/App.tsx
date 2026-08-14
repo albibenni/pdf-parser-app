@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fileName, fileStem } from "./lib/paths";
@@ -6,9 +7,21 @@ import type {
   ConversionMode,
   ConversionRequest,
   ConversionResult,
+  InstallProgress,
   QueueItem,
   RuntimeStatus,
 } from "./types";
+
+const formatBytes = (bytes: number) => {
+  const units = ["B", "KB", "MB", "GB"];
+  const unit = Math.min(Math.floor(Math.log10(Math.max(bytes, 1)) / 3), 3);
+  return `${(bytes / 1000 ** unit).toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+};
+
+const formatEta = (seconds: number | null) => {
+  if (seconds === null || !Number.isFinite(seconds)) return "calculating…";
+  return `~${Math.max(1, Math.ceil(seconds))}s left`;
+};
 
 const modeDescription: Record<ConversionMode, string> = {
   fast: "Best default for M-series Macs and CPU-only Linux.",
@@ -34,6 +47,8 @@ function App() {
     detail: "Checking the local Marker runtime…",
   });
   const [installingRuntime, setInstallingRuntime] = useState(false);
+  const [installProgress, setInstallProgress] =
+    useState<InstallProgress | null>(null);
 
   const readyCount = useMemo(
     () => queue.filter((item) => item.status === "ready").length,
@@ -51,8 +66,19 @@ function App() {
     );
   }, [refreshRuntime]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<InstallProgress>("marker-install-progress", (event) => {
+      setInstallProgress(event.payload);
+    }).then((remove) => {
+      unlisten = remove;
+    });
+    return () => unlisten?.();
+  }, []);
+
   const installRuntime = async () => {
     setInstallingRuntime(true);
+    setInstallProgress(null);
     setMessage("Installing Marker locally. This can take a few minutes.");
     try {
       const status = await invoke<RuntimeStatus>("install_marker_runtime");
@@ -158,6 +184,44 @@ function App() {
             {runtime.state === "ready" ? "Marker is ready" : "Set up Marker"}
           </h2>
           <p>{runtime.detail}</p>
+          {installingRuntime && (
+            <>
+              <div
+                aria-label="Installing Marker"
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={
+                  installProgress
+                    ? Math.round(
+                        (installProgress.currentBytes /
+                          installProgress.totalBytes) *
+                          100,
+                      )
+                    : undefined
+                }
+                aria-valuetext={
+                  installProgress
+                    ? `${formatBytes(installProgress.currentBytes)} of ${formatBytes(installProgress.totalBytes)}`
+                    : "Preparing installation"
+                }
+                className="install-progress"
+                role="progressbar"
+              >
+                <span
+                  style={{
+                    width: installProgress
+                      ? `${(installProgress.currentBytes / installProgress.totalBytes) * 100}%`
+                      : undefined,
+                  }}
+                />
+              </div>
+              <p className="install-details">
+                {installProgress
+                  ? `${formatBytes(installProgress.currentBytes)} / ${formatBytes(installProgress.totalBytes)} · ${formatBytes(installProgress.bytesPerSecond)}/s · ${formatEta(installProgress.etaSeconds)}`
+                  : "Preparing the private Python environment…"}
+              </p>
+            </>
+          )}
           {runtime.state === "missing" && (
             <button
               className="secondary-button"

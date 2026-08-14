@@ -16,6 +16,13 @@ export type RuntimeStatus = {
   detail: string;
 };
 
+export type InstallProgress = {
+  currentBytes: number;
+  totalBytes: number;
+  bytesPerSecond: number;
+  etaSeconds: number | null;
+};
+
 export type QueueItem = {
   id: string;
   inputPath: string;

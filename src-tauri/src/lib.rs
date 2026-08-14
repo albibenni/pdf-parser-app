@@ -1,11 +1,14 @@
 use std::{
     fs,
+    io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    thread,
+    time::Instant,
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +38,15 @@ struct ConversionResult {
 struct RuntimeStatus {
     state: &'static str,
     detail: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallProgress {
+    current_bytes: u64,
+    total_bytes: u64,
+    bytes_per_second: f64,
+    eta_seconds: Option<f64>,
 }
 
 #[tauri::command]
@@ -108,13 +120,92 @@ fn install_runtime(app: &AppHandle) -> Result<RuntimeStatus, String> {
         ensure_success("create the private Python environment", output)?;
     }
 
-    let output = Command::new(&python)
-        .args(["-m", "pip", "install", "--upgrade", "marker-pdf"])
-        .output()
-        .map_err(|error| format!("Could not install Marker: {error}"))?;
-    ensure_success("install Marker", output)?;
+    install_marker_with_progress(app, &python)?;
 
     runtime_status(app)
+}
+
+fn install_marker_with_progress(app: &AppHandle, python: &Path) -> Result<(), String> {
+    let mut child = Command::new(python)
+        .args([
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "--progress-bar",
+            "raw",
+            "marker-pdf",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Could not start the Marker installer: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Could not read Marker installer progress.".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Could not read Marker installer errors.".to_string())?;
+    let stderr_reader = thread::spawn(move || {
+        BufReader::new(stderr)
+            .lines()
+            .filter_map(Result::ok)
+            .collect::<Vec<_>>()
+            .join("\n")
+    });
+    let mut last_bytes = 0_u64;
+    let mut last_update = Instant::now();
+
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        if let Some((current_bytes, total_bytes)) = parse_pip_progress(&line) {
+            let elapsed = last_update.elapsed().as_secs_f64();
+            let bytes_per_second = if current_bytes >= last_bytes && elapsed > 0.0 {
+                (current_bytes - last_bytes) as f64 / elapsed
+            } else {
+                0.0
+            };
+            let eta_seconds = (bytes_per_second > 0.0 && total_bytes >= current_bytes)
+                .then(|| (total_bytes - current_bytes) as f64 / bytes_per_second);
+            let _ = app.emit(
+                "marker-install-progress",
+                InstallProgress {
+                    current_bytes,
+                    total_bytes,
+                    bytes_per_second,
+                    eta_seconds,
+                },
+            );
+            last_bytes = current_bytes;
+            last_update = Instant::now();
+        }
+    }
+
+    let status = child
+        .wait()
+        .map_err(|error| format!("Could not wait for the Marker installer: {error}"))?;
+    let error_output = stderr_reader
+        .join()
+        .map_err(|_| "Could not collect Marker installer errors.".to_string())?;
+    if status.success() {
+        Ok(())
+    } else if error_output.is_empty() {
+        Err(format!(
+            "Could not install Marker; process exited with status {status}."
+        ))
+    } else {
+        Err(format!("Could not install Marker: {error_output}"))
+    }
+}
+
+fn parse_pip_progress(line: &str) -> Option<(u64, u64)> {
+    let values = line.strip_prefix("Progress ")?.split(" of ");
+    let mut values = values.map(str::parse::<u64>);
+    match (values.next()?.ok()?, values.next()?.ok()?) {
+        (current, total) if total > 0 => Some((current, total)),
+        _ => None,
+    }
 }
 
 fn ensure_success(action: &str, output: std::process::Output) -> Result<(), String> {
@@ -215,11 +306,20 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::ConversionMode;
+    use super::{parse_pip_progress, ConversionMode};
 
     #[test]
     fn deserializes_text_only_mode() {
         let mode: ConversionMode = serde_json::from_str("\"text-only\"").unwrap();
         assert!(matches!(mode, ConversionMode::TextOnly));
+    }
+
+    #[test]
+    fn parses_pip_raw_progress() {
+        assert_eq!(
+            parse_pip_progress("Progress 500 of 1000"),
+            Some((500, 1000))
+        );
+        assert_eq!(parse_pip_progress("Progress 500 of 0"), None);
     }
 }
