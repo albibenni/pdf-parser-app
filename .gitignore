@@ -1,0 +1,35 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+coverage
+*.local
+
+# Editor directories and files
+.vscode
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Builds
+*.deb
+*.rpm
+*.AppImage
+*.tar.gz
+*.zip
+aur/*
+!aur/PKGBUILD
+**/target/
+src-tauri/obsidian-folder-picker/Cargo.lock
